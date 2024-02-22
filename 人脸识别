@@ -1,0 +1,77 @@
+import cv2
+import dlib
+import numpy as np
+import pickle
+
+# 从文件中加载已知人脸数据库
+with open('known_faces_database.pkl', 'rb') as f:
+    known_faces_database = pickle.load(f)
+
+# 加载Dlib的人脸检测器和预测器
+detector = dlib.get_frontal_face_detector()
+predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
+face_recognizer = dlib.face_recognition_model_v1("dlib_face_recognition_resnet_model_v1.dat")
+
+# 打开摄像头
+cap = cv2.VideoCapture(0)
+
+# 捕捉人脸
+try:
+    while True:
+        ret, frame = cap.read()  # 读取一帧图像
+
+        if not ret:
+            break
+
+        # 将图像从 BGR 转换为 RGB
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # 使用人脸检测器检测人脸
+        faces = detector(rgb_frame)
+
+        # 遍历每个检测到的人脸
+        for face in faces:
+            # 获取人脸区域的68个关键点
+            landmarks = predictor(rgb_frame, face)
+
+            # 提取人脸的特征向量
+            face_encoding = np.array(face_recognizer.compute_face_descriptor(rgb_frame, landmarks))
+
+            # 计算新人脸与已知人脸的距离
+            distances = np.linalg.norm(known_faces_database["encodings"] - face_encoding, axis=1)
+
+            # 找到距离最近的已知人脸
+            if distances.size > 0:  # 确保至少有一个已知的面孔进行比较
+                min_distance_index = np.argmin(distances)
+                min_distance = distances[min_distance_index]
+
+                if min_distance < 0.6:  # 根据实际情况调整阈值
+                    # 识别成功，显示名字
+                    name = known_faces_database["names"][min_distance_index]
+                    cv2.putText(frame, name, (face.left(), face.top() - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                else:
+                    # 如果距离过大，标注为未知
+                    name = "Unknown"
+                    cv2.putText(frame, name, (face.left(), face.top() - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+            else:
+                # 如果没有已知的面孔可比较，标注为未知
+                name = "Unknown"
+                cv2.putText(frame, name, (face.left(), face.top() - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+
+            # 打印调试信息
+            print("匹配姓名:", name)
+            print("最小距离:", min_distance)
+
+            cv2.rectangle(frame, (face.left(), face.top()), (face.right(), face.bottom()), (0, 255, 0), 2)
+
+        # 显示图像
+        cv2.imshow('Face Recognition', frame)
+
+        # 按 'q' 键退出循环
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+finally:
+    # 释放摄像头
+    cap.release()
+    cv2.destroyAllWindows()
+
